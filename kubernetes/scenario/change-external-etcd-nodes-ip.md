@@ -47,11 +47,10 @@ cat > ca-csr.json <<EOF
   },
   "names": [
     {
-      "C": "US",
-      "L": "Portland",
+      "C": "IR",
       "O": "Kubernetes",
-      "OU": "CA",
-      "ST": "Oregon"
+      "OU": "ETCD-CA",
+      "ST": "Teh"
     }
   ]
 }
