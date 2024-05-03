@@ -1,6 +1,7 @@
-## Procedure for Changing External etcd Nodes IP
+# Procedure for Changing External etcd Nodes IP
 This document outlines the steps required to change the IP addresses of etcd nodes in an external Kubernetes cluster.
-> **Note:** Ensuring to perform each step on one node at a time to maintain system stability and safety.
+> [!Note]
+>  Ensuring to perform each step on one node at a time to maintain system stability and safety.
 ## Table of Machines
 | Name |  Purpose  |	Old IP	| New IP|
 | :-------------: | :-------------: | :-------------: | :-------------: | 
@@ -12,8 +13,59 @@ This document outlines the steps required to change the IP addresses of etcd nod
 | Master-2 | Kubernetes master node	 | 192.168.181.18 | 192.168.171.18 |
 | Master-3 | Kubernetes worker node |  192.168.181.19| 192.168.171.19 |
 
-#### 1. Generate Certificates:
-- Generate a certificate with old and new etcd nodes IP addresses and also wildcard etcd domain (e.g., *.etcd.local).
+## Generate Certificates
+Generate a certificate with old and new etcd nodes IP addresses and also wildcard etcd domain (e.g., *.etcd.local).
+<details><summary>Click to Expand: Detailed Guide for Creating a Certificate Authority (CA)</summary>
+<p>
+  
+```ruby
+# On the Bastion Host
+
+{
+cat > ca-config.json <<EOF
+{
+  "signing": {
+    "default": {
+      "expiry": "8760h"
+    },
+    "profiles": {
+      "kubernetes": {
+        "usages": ["signing", "key encipherment", "server auth", "client auth"],
+        "expiry": "8760h"
+      }
+    }
+  }
+}
+EOF
+
+cat > ca-csr.json <<EOF
+{
+  "CN": "Kubernetes-etcd",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "US",
+      "L": "Portland",
+      "O": "Kubernetes",
+      "OU": "CA",
+      "ST": "Oregon"
+    }
+  ]
+}
+EOF
+
+cfssl gencert -initca ca-csr.json | cfssljson -bare ca
+}
+```
+
+</p>
+</details>
+<details><summary>Click to Expand: Generating Certificates for etcd Nodes</summary>
+<p>
+  
 ```ruby
 # On the Bastion Host
 
@@ -46,27 +98,78 @@ cfssl gencert \
   -profile=kubernetes \
   etcd-csr.json | cfssljson -bare etcd-cluster
 ```
-#### 2. Distribute Certificates:
-- Copy the necessary new certificate files to all etcd nodes and master nodes in the configured path location:
+
+</p>
+</details>
+
+## Distribute Certificates
+Copy the necessary new certificate files to all etcd nodes and master nodes in the configured path location:
 ```bash
+# On the Bastion Host
+
 # For etcd nodes
 for i in `seq 14 16`; do scp etcd-cluster-key.pem etcd-cluster.pem root@192.168.181.$i:/etc/etcd/pki; done
 # For master nodes
 for i in `seq 17 19`; do scp etcd-cluster-key.pem etcd-cluster.pem root@192.168.181.$i:/etc/kubernetes/pki/etcd/; done
 ```
-#### 3. Update DNS Records:
-- Add new DNS records for etcd nodes with their new IP addresses.
-#### 4. Edit Kubernetes Configuration:
-- On one master node, edit the kubeadm configmap with the new etcd certificate and change the etcd IP to etcd name.
-- Additionally, update this step in the kube-apiserver manifest.
-#### 5. Check Member ID and Cluster Health:
+## Edit Kubernetes Master Nodes and etcd Nodes Configuration
+**Step 1:** Update the etcd configuration **on all etcd** nodes with the new etcd certificates.
+<details><summary>Expand to see the part of etcd TLS configuration</summary>
+  
 ```bash
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/etcd \
+  --name etcd-1\
+  --cert-file=/etc/etcd/pki/etcd-cluster.pem \
+  --key-file=/etc/etcd/pki/etcd-cluster-key.pem \
+  --peer-cert-file=/etc/etcd/pki/etcd-cluster.pem \
+  --peer-key-file=/etc/etcd/pki/etcd-cluster-key.pem \
+  --trusted-ca-file=/etc/etcd/pki/ca.pem \
+  --peer-trusted-ca-file=/etc/etcd/pki/ca.pem \
+```
+```bash
+# Restart etcd service
+
+systemctl daemon-reload
+systemctl start etcd
+```  
+</details>
+
+**Step 2:** On **one master node**, edit the kubeadm configmap with the new etcd certificate and change the etcd IP to etcd dns name.
+```bash
+kubectl -n kube-system edit cm kubeadm-config
+```
+**Step 3:** Additionally, update this step **one by one** in the kube-apiserver manifest on each master node.
+<details><summary>Expand to see the part of external etcd configuration in the manifest </summary>
+  
+```bash
+    etcd:
+      external:
+        caFile: /etc/kubernetes/pki/etcd/ca.pem
+        certFile: /etc/kubernetes/pki/etcd/etcd-cluster.pem
+        endpoints:
+        - https://etcd-1.etcd.local:2379
+        - https://etcd-2.etcd.local:2379
+        - https://etcd-3.etcd.local:2379
+        keyFile: /etc/kubernetes/pki/etcd/etcd-cluster-key.pem
+```
+</details>
+
+> **Important:** Ensure proper resolution of etcd Host and DNS names.
+## Check Member ID and Cluster Health
+```bash
+# Check Cluster Health
+
 ETCDCTL_API=3 etcdctl endpoint health \
 --write-out=table \
---endpoints=https://etcd-1.etcd.local:2379,https://etcd-2.etcd.local:2379,https://etcd-3.etcd.local:2379 \
+--endpoints=https://192.168.181.14:2379,https://192.168.181.15:2379,https://192.168.181.16:2379 \
 --cacert=/etc/etcd/pki/ca.pem \
---cert=/etc/etcd/pki/etcd-cluster.pem \
---key=/etc/etcd/pki/etcd-cluster-key.pem
+--cert=/etc/etcd/pki/etcd.pem \
+--key=/etc/etcd/pki/etcd-key.pem
+```
+```bash
+# Check Member IDs
 
 ETCDCTL_API=3 etcdctl endpoint status \
 --write-out=table \
@@ -75,7 +178,7 @@ ETCDCTL_API=3 etcdctl endpoint status \
 --cert=/etc/etcd/pki/etcd.pem \
 --key=/etc/etcd/pki/etcd-key.pem
 ```
-#### 6. Remove etcd Node:
+## Remove etcd Node
 - Stop etcd service on the node to be removed:
 ```bash
 systemctl stop etcd
@@ -83,7 +186,7 @@ systemctl stop etcd
 - Execute the following command on existing nodes to remove the specified etcd member:
 ```bash
 ETCDCTL_API=3 etcdctl member remove f9184ef2d52a2163 \
---endpoints=https://etcd-2.etcd.local:2379,https://etcd-3.etcd.local:2379 \
+--endpoints=https://192.168.181.15:2379,https://192.168.181.16:2379 \
 --cacert=/etc/etcd/pki/ca.pem \
 --cert=/etc/etcd/pki/etcd-cluster.pem \
 --key=/etc/etcd/pki/etcd-cluster-key.pem
@@ -92,10 +195,9 @@ ETCDCTL_API=3 etcdctl member remove f9184ef2d52a2163 \
 ```bash
 rm -rf /var/lib/etcd/*
 ```
-#### 7. Change IP and DNS Records:
-- Change the IP address and DNS record for the removed etcd node.
-#### 8. Modify Existing etcd Configuration:
-- Update the etcd configuration on existing nodes, such as example.
+## Change IP and DNS Records
+Modify the IP address and DNS record for the removed etcd node on all etcd and master nodes in the cluster.
+## Update etcd configuration on the previously removed etcd node as a new Member
 ```bash
 # Example
 [Unit]
@@ -128,12 +230,12 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 ```
-#### 9. Add the previously removed etcd node as a New Member:
+## Add New Member
 - On one of the existing nodes:
 ```bash
 ETCDCTL_API=3 etcdctl member add etcd-1 \
 --peer-urls=https://etcd-1.etcd.local:2380 \
---endpoints=https://etcd-2.etcd.local:2379,https://etcd-3.etcd.local:2379 \
+--endpoints=https://192.168.181.15:2379,https://192.168.181.16:2379 \
 --cacert=/etc/etcd/pki/ca.pem \
 --cert=/etc/etcd/pki/etcd-cluster.pem \
 --key=/etc/etcd/pki/etcd-cluster-key.pem
@@ -143,16 +245,20 @@ ETCDCTL_API=3 etcdctl member add etcd-1 \
 systemctl daemon-reload
 systemctl start etcd
 ```
-#### 10. Restart Existing Members:
+## Restart Existing Members
 - Change the etcd configuration for existing members and restart the etcd service:
 ```bash
 systemctl daemon-reload
 systemctl restart etcd
 ```
+## Edit Kubernetes Configuration
+- On one master node, edit the kubeadm configmap with the new etcd certificate and change the etcd IP to etcd name.
+- Additionally, update this step in the kube-apiserver manifest.
+
 > Repeat these steps for each etcd node in the external etcd cluster for Kubernetes.
-### Result:
+### Result
 ```bash
-ETCDCTL_API=3 etcdctl endpoint status   --write-out=table \
+ETCDCTL_API=3 etcdctl endpoint status --write-out=table \
 --endpoints=https://etcd-1.etcd.local:2379,https://etcd-2.etcd.local:2379,https://etcd-3.etcd.local:2379 \
 --cacert=/etc/etcd/pki/ca.pem \
 --cert=/etc/etcd/pki/etcd-cluster.pem \
