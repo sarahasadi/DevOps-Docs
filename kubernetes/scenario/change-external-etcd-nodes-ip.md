@@ -112,7 +112,11 @@ for i in `seq 14 16`; do scp etcd-cluster-key.pem etcd-cluster.pem root@192.168.
 for i in `seq 17 19`; do scp etcd-cluster-key.pem etcd-cluster.pem root@192.168.181.$i:/etc/kubernetes/pki/etcd/; done
 ```
 ## Edit Kubernetes Master Nodes and etcd Nodes Configuration
-**Step 1:** Update the etcd configuration **on all etcd** nodes with the new etcd certificates and restart the etcd service to apply changes after **step 3**
+> [!Important]
+> - Ensure proper resolution of etcd Host and DNS names.
+> - Before proceeding with these changes, make sure you have backed up the directory /etc/kubernetes/.
+
+**Step 1:** Update the etcd configuration **on all etcd** nodes with the new etcd certificates and restart the etcd service to apply changes after **step 3.**
 <details><summary>Expand to see the part of etcd TLS configuration</summary>
   
 ```bash
@@ -133,7 +137,6 @@ ExecStart=/usr/local/bin/etcd \
 ```bash
 kubectl -n kube-system edit cm kubeadm-config
 ```
-**Step 3:** Additionally, update this step **one by one** in the kube-apiserver manifest on each master node.
 <details><summary>Expand to see the part of external etcd configuration in the manifest </summary>
   
 ```bash
@@ -149,14 +152,15 @@ kubectl -n kube-system edit cm kubeadm-config
 ```
 </details>
 
+**Step 3:** Additionally, update the same as Step 2 **one by one** in the kube-apiserver manifest on each master node. It is strongly recommended to keep them both in sync.
+
 ```bash
 # Restart etcd service
 
 systemctl daemon-reload
 systemctl start etcd
-```  
+```
 
-> **Important:** Ensure proper resolution of etcd Host and DNS names.
 ## Check Member ID and Cluster Health
 ```bash
 # Check Cluster Health
