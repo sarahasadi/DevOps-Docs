@@ -137,7 +137,7 @@ ExecStart=/usr/local/bin/etcd \
 ```bash
 kubectl -n kube-system edit cm kubeadm-config
 ```
-<details><summary>Expand to see the part of external etcd configuration in the manifest </summary>
+<details><summary>Expand to see the part of external etcd configuration</summary>
   
 ```bash
     etcd:
