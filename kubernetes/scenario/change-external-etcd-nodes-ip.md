@@ -112,7 +112,7 @@ for i in `seq 14 16`; do scp etcd-cluster-key.pem etcd-cluster.pem root@192.168.
 for i in `seq 17 19`; do scp etcd-cluster-key.pem etcd-cluster.pem root@192.168.181.$i:/etc/kubernetes/pki/etcd/; done
 ```
 ## Edit Kubernetes Master Nodes and etcd Nodes Configuration
-**Step 1:** Update the etcd configuration **on all etcd** nodes with the new etcd certificates.
+**Step 1:** Update the etcd configuration **on all etcd** nodes with the new etcd certificates and restart the etcd service to apply changes after **step 3**
 <details><summary>Expand to see the part of etcd TLS configuration</summary>
   
 ```bash
