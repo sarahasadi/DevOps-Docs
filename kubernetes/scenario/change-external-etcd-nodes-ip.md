@@ -127,12 +127,6 @@ ExecStart=/usr/local/bin/etcd \
   --trusted-ca-file=/etc/etcd/pki/ca.pem \
   --peer-trusted-ca-file=/etc/etcd/pki/ca.pem \
 ```
-```bash
-# Restart etcd service
-
-systemctl daemon-reload
-systemctl start etcd
-```  
 </details>
 
 **Step 2:** On **one master node**, edit the kubeadm configmap with the new etcd certificate and change the etcd IP to etcd dns name.
@@ -154,6 +148,13 @@ kubectl -n kube-system edit cm kubeadm-config
         keyFile: /etc/kubernetes/pki/etcd/etcd-cluster-key.pem
 ```
 </details>
+
+```bash
+# Restart etcd service
+
+systemctl daemon-reload
+systemctl start etcd
+```  
 
 > **Important:** Ensure proper resolution of etcd Host and DNS names.
 ## Check Member ID and Cluster Health
